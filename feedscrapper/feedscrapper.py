@@ -11,7 +11,7 @@ import pytz
 import argparse
 
 
-def main(gtfs_zip_or_dir, feed_url, db_file, timezone):
+def main(gtfs_zip_or_dir, feed_url, db_file, timezone, interval):
   loader = transitfeed.Loader(gtfs_zip_or_dir)
   schedule = loader.Load()
   db_manager = DbManager(db_file)
@@ -21,6 +21,7 @@ def main(gtfs_zip_or_dir, feed_url, db_file, timezone):
     return
 
   while True:
+    before = time.time()
     feed = read_feed(feed_url)
     for entity in feed.entity:
       if entity.HasField('vehicle'):
@@ -46,7 +47,8 @@ def main(gtfs_zip_or_dir, feed_url, db_file, timezone):
           db_manager.insert_log((trip.trip_id, entity.vehicle.stop_id, entity.vehicle.timestamp, delay,
                                  len(util.poly_point.poly._points) - 1, util.poly_point.segment_indx,
                                  util.poly_point.get_current_segment_progress()))
-    time.sleep(49)
+    proc_time = time.time() - before
+    time.sleep(interval - proc_time)
 
 
 def _normalize_time(timestamp, timezone):
@@ -81,7 +83,8 @@ if __name__ == "__main__":
     parser.add_argument('--feedUrl', help='Gtfs realtime vehicle position url', required=True)
     parser.add_argument('--sqliteDb', help='A path to sqlite db file', required=True)
     parser.add_argument('--timezone', help='A timezone for this feed', required=True)
+    parser.add_argument('--interval', help='A time interval between requests (in secs)', type=int, required=True)
     args = parser.parse_args()
-    main(args.gtfsZipOrDir, args.feedUrl, args.sqliteDb, args.timezone)
+    main(args.gtfsZipOrDir, args.feedUrl, args.sqliteDb, args.timezone, args.interval)
   except KeyboardInterrupt as err:
     pass
