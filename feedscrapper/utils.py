@@ -18,6 +18,8 @@ class TripUtil:
             if stop.stop_id == self.next_stop_id:
                 stop_found = True
                 break
+        if not self.next_stop_id:
+            raise ValueError("Missing stop_id for trip_id {}".format(trip.trip_id))
         if not stop_found:
             raise ValueError("Stop_id {}, doesn't belong to trip_id {}".format(self.next_stop_id, trip.trip_id))
 

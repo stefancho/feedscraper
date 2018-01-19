@@ -9,6 +9,9 @@ import transitfeed
 import time
 import pytz
 import argparse
+import logging
+
+logging.basicConfig(filename='feedscraper.log',level=logging.DEBUG)
 
 
 def main(gtfs_zip_or_dir, feed_url, db_file, timezone, interval):
@@ -17,28 +20,32 @@ def main(gtfs_zip_or_dir, feed_url, db_file, timezone, interval):
   db_manager = DbManager(db_file)
 
   if not schedule.GetShapeList():
-    print "This feed doesn't contain shape.txt file. Exit..."
+    logging.error("This feed doesn't contain shape.txt file. Exit...")
     return
-
+  logging.info("Start at local time {}".format(datetime.now()))
   while True:
     before = time.time()
     feed = read_feed(feed_url)
     for entity in feed.entity:
       if entity.HasField('vehicle'):
+        logging.info("Vehicle position trip_id:{}, timestamp:{}, latitude:{}, longitude:{}, stop_id:{}".format(
+          entity.vehicle.trip.trip_id, entity.vehicle.timestamp, entity.vehicle.position.latitude,
+          entity.vehicle.position.longitude, entity.vehicle.stop_id
+        ))
         try:
           trip = schedule.GetTrip(entity.vehicle.trip.trip_id)
         except KeyError as e:
-          print "Faulty trip_id for entity: {}".format(entity)
+          logging.warning("Faulty trip_id for entity: {}".format(entity))
           continue
 
         vehiclePoint = Point.FromLatLng(entity.vehicle.position.latitude, entity.vehicle.position.longitude)
         try:
           util = TripUtil(trip, vehiclePoint, entity.vehicle.stop_id)
         except PointOutOfPolylineException as e:
-          print "Shape too far from vehicle position for trip_id {}".format(trip.trip_id)
+          logging.warning("Shape too far from vehicle position for trip_id {}".format(trip.trip_id))
           continue
         except ValueError as ve:
-          print ve.message
+          logging.warning(ve.message)
           continue
 
         estimated_time = util.get_estimated_scheduled_time()
@@ -87,4 +94,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     main(args.gtfsZipOrDir, args.feedUrl, args.sqliteDb, args.timezone, args.interval)
   except KeyboardInterrupt as err:
-    pass
+    logging.info("Ended at {}".format(datetime.now()))
