@@ -30,6 +30,7 @@ class DbManager:
                                         ); """)
 
             cursor.execute("""CREATE INDEX IF NOT EXISTS trip_index ON vehicle_log (trip_id);""")
+            cursor.execute("""CREATE INDEX IF NOT EXISTS time_index ON vehicle_log (time);""")
         except Error as e:
             print e
             raise e
