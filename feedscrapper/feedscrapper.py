@@ -22,16 +22,13 @@ def main(gtfs_zip_or_dir, feed_url, db_file, timezone, interval):
   if not schedule.GetShapeList():
     logging.error("This feed doesn't contain shape.txt file. Exit...")
     return
+
   logging.info("Start at local time {}".format(datetime.now()))
   while True:
     before = time.time()
     feed = read_feed(feed_url)
     for entity in feed.entity:
       if entity.HasField('vehicle'):
-        logging.info("Vehicle position trip_id:{}, timestamp:{}, latitude:{}, longitude:{}, stop_id:{}".format(
-          entity.vehicle.trip.trip_id, entity.vehicle.timestamp, entity.vehicle.position.latitude,
-          entity.vehicle.position.longitude, entity.vehicle.stop_id
-        ))
         try:
           trip = schedule.GetTrip(entity.vehicle.trip.trip_id)
         except KeyError as e:
@@ -42,18 +39,31 @@ def main(gtfs_zip_or_dir, feed_url, db_file, timezone, interval):
         try:
           util = TripUtil(trip, vehiclePoint, entity.vehicle.stop_id)
         except PointOutOfPolylineException as e:
-          logging.warning("Shape too far from vehicle position for trip_id {}".format(trip.trip_id))
+          logging.warning(e.message)
           continue
         except ValueError as ve:
           logging.warning(ve.message)
           continue
 
-        estimated_time = util.get_estimated_scheduled_time()
+        logging.info("Vehicle position trip_id:{}, timestamp:{}, to_end:{}, stop_id:{}".format(
+            entity.vehicle.trip.trip_id, entity.vehicle.timestamp, util.get_distance_to_end_stop(), entity.vehicle.stop_id
+        ))
+
+        cur_trip_progress = db_manager.get_trip_progress(trip.trip_id)
+        new_progress = util.poly_point.get_overall_progress()
+        if new_progress < cur_trip_progress:
+          logging.error("The trip_id {} seems to go backwards.".format(trip.trip_id))
+          continue
+
+        estimated_time, stop_progress = util.get_estimated_scheduled_time()
         delay = calculate_delay(_normalize_time(entity.vehicle.timestamp, timezone), estimated_time)
-        if db_manager.get_record_cont(trip.trip_id, entity.vehicle.timestamp) == 0:
-          db_manager.insert_log((trip.trip_id, entity.vehicle.stop_id, entity.vehicle.timestamp, delay,
-                                 len(util.poly_point.poly._points) - 1, util.poly_point.segment_indx,
-                                 util.poly_point.get_current_segment_progress()))
+        if not db_manager.has_log_duplicate(trip.trip_id, entity.vehicle.timestamp):
+          if util.get_stop_seq() == 1:#there can be only one start of trip
+            db_manager.delete_logs(trip.trip_id, entity.vehicle.timestamp)
+          if util.get_distance_to_end_stop() < 100 and cur_trip_progress == new_progress:
+            continue
+          db_manager.insert_log(entity.vehicle.trip.route_id, trip.trip_id, util.get_stop_seq(),
+                                entity.vehicle.timestamp, delay, new_progress, stop_progress)
     proc_time = time.time() - before
     time.sleep(interval - proc_time)
 
@@ -93,5 +103,6 @@ if __name__ == "__main__":
     parser.add_argument('--interval', help='A time interval between requests (in secs)', type=int, required=True)
     args = parser.parse_args()
     main(args.gtfsZipOrDir, args.feedUrl, args.sqliteDb, args.timezone, args.interval)
+    # main("C:\\Users\\stefancho\\Desktop\\gtfs-burlington", "http://opendata.burlington.ca/gtfs-rt/GTFS_VehiclePositions.pb", "C:\\sqlite\\db\\burlington_v1.db", "US/Eastern", 50)
   except KeyboardInterrupt as err:
     logging.info("Ended at {}".format(datetime.now()))

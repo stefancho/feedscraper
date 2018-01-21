@@ -20,13 +20,13 @@ class DbManager:
         try:
             cursor = self.conn.cursor()
             cursor.execute(""" CREATE TABLE IF NOT EXISTS vehicle_log (
+                                            route_id VARCHAR(20) NOT NULL,
                                             trip_id VARCHAR(20) NOT NULL,
-                                            stop_id VARCHAR(20) NOT NULL,
                                             time TIMESTAMP NOT NULL,
+                                            stop_seq integer NOT NULL,
+                                            stop_progress real NOT NULL,
                                             delay_sec integer NOT NULL,
-                                            segment_count integer NOT NULL,
-                                            current_segment integer NOT NULL,
-                                            segment_progress integer NOT NULL
+                                            progress real NOT NULL
                                         ); """)
 
             cursor.execute("""CREATE INDEX IF NOT EXISTS trip_index ON vehicle_log (trip_id);""")
@@ -36,24 +36,58 @@ class DbManager:
             raise e
 
 
-    def insert_log(self, log):
+    def insert_log(self, route_id, trip_id, stop_seq, sampling_time, delay_sec, progress, inter_progress):
         try:
-            sql = ''' INSERT INTO vehicle_log(trip_id, stop_id, time, delay_sec, segment_count, current_segment, 
-                        segment_progress) VALUES(?,?,?,?,?,?,?) '''
+            sql = ''' INSERT INTO vehicle_log(route_id, trip_id, stop_seq, time, delay_sec, progress, 
+                        stop_progress) VALUES(?,?,?,?,?,?,?) '''
             cur = self.conn.cursor()
-            cur.execute(sql, log)
+            cur.execute(sql, (route_id, trip_id, stop_seq, sampling_time, delay_sec, progress, inter_progress))
             self.conn.commit()
         except Error as e:
             print e
             raise e
 
-    def get_record_cont(self, trip_id, time):
+    def has_log_duplicate(self, trip_id, time):
         try:
             cur = self.conn.cursor()
             cur.execute("SELECT * FROM vehicle_log WHERE trip_id=? AND time=?", (trip_id, time))
 
             rows = cur.fetchall()
-            return len(rows)
+            return len(rows) > 0
+        except Error as e:
+            print e
+            raise e
+
+    def has_log_same_progress(self, trip_id, progress):
+        try:
+            cur = self.conn.cursor()
+            cur.execute("SELECT * FROM vehicle_log WHERE trip_id=? AND progress=?", (trip_id, progress))
+
+            rows = cur.fetchall()
+            return len(rows) > 0
+        except Error as e:
+            print e
+            raise e
+
+    def get_trip_progress(self, trip_id):
+        try:
+            cur = self.conn.cursor()
+            cur.execute("SELECT progress FROM vehicle_log WHERE trip_id=? ORDER BY time desc LIMIT 1", (trip_id,))
+
+            rows = cur.fetchall()
+            if rows:
+                return rows[0][0]
+            else:
+                return None
+        except Error as e:
+            print e
+            raise e
+
+    def delete_logs(self, trip_id, before_time):
+        try:
+            cur = self.conn.cursor()
+            cur.execute("DELETE FROM vehicle_log WHERE trip_id=? and time<?", (trip_id, before_time))
+            self.conn.commit()
         except Error as e:
             print e
             raise e
@@ -61,7 +95,17 @@ class DbManager:
     def close_connection(self):
         self.conn.close()
 
-# manager = DbManager("C:\\sqlite\db\pythonsqlite.db")
-# if manager.get_record_cont('564641', 12345) == 0:
-#     manager.insert_log((327, '564641', 12345, 56, 56, 9, 0.8))
+# manager = DbManager("C:\\sqlite\db\\test.db")
+# if not manager.has_log_duplicate('trid123', 34566777):
+#     manager.insert_log('rt123', 'trid123', 3, 34566777, 34, 0.9, 0.4)
+# manager.delete_log('trid123', 34566778)
+
+# manager.insert_log('rt123', '247966', 3, 34566770, 34, 0.9964874750106843, 0.9764874750106843)
+# manager.insert_log('rt123', '247966', 3, 34566775, 34, 0.9964874750106843, 0.9864874750106843)
+# print manager.has_log_same_progress('247966', 0.9964874750106843) and manager.has_log_duplicate('247966', 34566777)
+# manager.delete_log('247966', 34566778)
+
+# print manager.get_trip_progress('247966')
+# print manager.get_trip_progress('2479660')
+#
 # manager.close_connection()
