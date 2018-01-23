@@ -49,19 +49,17 @@ def main(gtfs_zip_or_dir, feed_url, db_file, timezone, interval):
             entity.vehicle.trip.trip_id, entity.vehicle.timestamp, util.get_distance_to_end_stop(), entity.vehicle.stop_id
         ))
 
-        cur_trip_progress = db_manager.get_trip_progress(trip.trip_id)
+        cur_trip_progress = db_manager.get_latest_trip_progress(trip.trip_id, entity.vehicle.timestamp)
         new_progress = util.poly_point.get_overall_progress()
-        if new_progress < cur_trip_progress:
-          logging.error("The trip_id {} seems to go backwards.".format(trip.trip_id))
+        if util.get_distance_to_end_stop() < 100 and cur_trip_progress == new_progress:
+          continue
+        if cur_trip_progress is not None and new_progress < cur_trip_progress:
+          logging.warning("The trip_id {} seems to go backwards.".format(trip.trip_id))
           continue
 
-        estimated_time, stop_progress = util.get_estimated_scheduled_time()
-        delay = calculate_delay(_normalize_time(entity.vehicle.timestamp, timezone), estimated_time)
         if not db_manager.has_log_duplicate(trip.trip_id, entity.vehicle.timestamp):
-          if util.get_stop_seq() == 1:#there can be only one start of trip
-            db_manager.delete_logs(trip.trip_id, entity.vehicle.timestamp)
-          if util.get_distance_to_end_stop() < 100 and cur_trip_progress == new_progress:
-            continue
+          estimated_time, stop_progress = util.get_estimated_scheduled_time()
+          delay = calculate_delay(_normalize_time(entity.vehicle.timestamp, timezone), estimated_time)
           db_manager.insert_log(entity.vehicle.trip.route_id, trip.trip_id, util.get_stop_seq(),
                                 entity.vehicle.timestamp, delay, new_progress, stop_progress)
     proc_time = time.time() - before

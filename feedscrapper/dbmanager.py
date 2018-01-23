@@ -69,10 +69,11 @@ class DbManager:
             print e
             raise e
 
-    def get_trip_progress(self, trip_id):
+    def get_latest_trip_progress(self, trip_id, timestamp):
         try:
             cur = self.conn.cursor()
-            cur.execute("SELECT progress FROM vehicle_log WHERE trip_id=? ORDER BY time desc LIMIT 1", (trip_id,))
+            cur.execute("SELECT progress FROM vehicle_log "
+                        "WHERE trip_id=? and ? - time < 12*3600 ORDER BY time desc LIMIT 1", (trip_id, timestamp))
 
             rows = cur.fetchall()
             if rows:
