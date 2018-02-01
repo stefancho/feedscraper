@@ -2,7 +2,7 @@ from google.transit import gtfs_realtime_pb2
 from datetime import datetime
 from dbmanager import DbManager
 from transitfeed.shapelib import Point
-from utils import TripState
+from utils import TripState, StopFarFromPolylineException
 from utils import PointOutOfPolylineException
 import requests
 import transitfeed
@@ -13,6 +13,7 @@ import logging
 
 SEC_IN_DAY = 24 * 3600
 HOUR_SECS = 23 * 3600
+
 
 def main(gtfs_zip_or_dir, feed_url, db_file, timezone, interval):
   loader = transitfeed.Loader(feed_path=gtfs_zip_or_dir, memory_db=False)
@@ -44,8 +45,8 @@ def main(gtfs_zip_or_dir, feed_url, db_file, timezone, interval):
         except PointOutOfPolylineException as e:
           logging.warning(e.message)
           continue
-        except ValueError as ve:
-          logging.warning(ve.message)
+        except StopFarFromPolylineException as e:
+          logging.warning(e.message)
           continue
 
         logging.info("Vehicle position trip_id:{}, timestamp:{}, to_end:{}, stop_id:{}".format(
@@ -64,7 +65,7 @@ def main(gtfs_zip_or_dir, feed_url, db_file, timezone, interval):
         if not db_manager.has_log_duplicate(trip.trip_id, entity.vehicle.timestamp):
           cnt += 1
           estimated_time = trip_state.get_estimated_scheduled_time()
-          stop_progress = trip_state.dist_to_prev_stop / trip_state.stop_interval
+          stop_progress = trip_state.get_stop_progress()
           delay = calculate_delay(_normalize_time(entity.vehicle.timestamp, timezone), estimated_time)
           db_manager.insert_log(entity.vehicle.trip.route_id, trip.trip_id, trip_state.get_stop_seq(),
                                 entity.vehicle.timestamp, delay, new_progress, stop_progress)
@@ -116,6 +117,10 @@ class ActiveTrips:
       return None
 
   def add_update_trip(self, trip_id, timestamp, progress):
+    # if self.is_trip_active():
+    #   day = self.active_trips[trip_id][2]
+    # else:
+
     self.active_trips[trip_id] = (progress, timestamp)
 
   def clean_unactive_trips(self):
@@ -138,13 +143,13 @@ if __name__ == "__main__":
     # if args.logFile is not None:
     #   logging.basicConfig(filename=args.logFile, level=logging.DEBUG)
     # main(args.gtfsZipOrDir, args.feedUrl, args.sqliteDb, args.timezone, args.interval)
-    main("C:\\Users\\stefancho\\Desktop\\gtfs-feeds\\gtfs-burlington", "http://opendata.burlington.ca/gtfs-rt/GTFS_VehiclePositions.pb", "C:\\sqlite\\db\\burlington.db", "US/Eastern", 50)
+    # main("C:\\Users\\stefancho\\Desktop\\gtfs-feeds\\gtfs-burlington", "http://opendata.burlington.ca/gtfs-rt/GTFS_VehiclePositions.pb", "C:\\sqlite\\db\\burlington.db", "US/Eastern", 50)
 
 
     # logging.basicConfig(filename='vancouver.log', level=logging.DEBUG)
-    # main("C:\\Users\\stefancho\\Desktop\\gtfs-feeds\\vancouver.zip",
-    #      "http://gtfs.translink.ca/gtfsposition?apikey=YondBWFAfXGcwwy2VieH", "C:\\sqlite\\db\\vancouver.db",
-    #      "Canada/Pacific", 50)
+    main("C:\\Users\\stefancho\\Desktop\\gtfs-feeds\\vancouver.zip",
+         "http://gtfs.translink.ca/gtfsposition?apikey=YondBWFAfXGcwwy2VieH", "C:\\sqlite\\db\\vancouver.db",
+         "Canada/Pacific", 50)
 
 
   except KeyboardInterrupt as err:
