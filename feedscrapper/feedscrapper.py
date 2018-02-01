@@ -15,9 +15,12 @@ SEC_IN_DAY = 24 * 3600
 HOUR_SECS = 23 * 3600
 
 
-def main(gtfs_zip_or_dir, feed_url, db_file, timezone, interval):
+def main(gtfs_zip_or_dir, feed_url, db_file, interval):
   loader = transitfeed.Loader(feed_path=gtfs_zip_or_dir, memory_db=False)
   schedule = loader.Load()
+  agency = schedule.GetDefaultAgency()
+  time_zone = pytz.timezone(agency.agency_timezone)
+
   db_manager = DbManager(db_file)
 
   if not schedule.GetShapeList():
@@ -66,7 +69,7 @@ def main(gtfs_zip_or_dir, feed_url, db_file, timezone, interval):
           cnt += 1
           estimated_time = trip_state.get_estimated_scheduled_time()
           stop_progress = trip_state.get_stop_progress()
-          delay = calculate_delay(_normalize_time(entity.vehicle.timestamp, timezone), estimated_time)
+          delay = calculate_delay(_normalize_time(entity.vehicle.timestamp, time_zone), estimated_time)
           db_manager.insert_log(entity.vehicle.trip.route_id, trip.trip_id, trip_state.get_stop_seq(),
                                 entity.vehicle.timestamp, delay, new_progress, stop_progress)
     db_manager.commit()
@@ -78,10 +81,9 @@ def main(gtfs_zip_or_dir, feed_url, db_file, timezone, interval):
     # active_trips.clean_unactive_trips()
     time.sleep(10)
 
-def _normalize_time(timestamp, timezone):
+def _normalize_time(timestamp, time_zone):
   """"Convert timestamp according to timezone, after that transform result to seconds after midnight"""
   # https: // maps.googleapis.com / maps / api / timezone / json?location = 40.06021, -82.969955 & timestamp = 1516809140 & key = AIzaSyADDgMlAZ5hnWEWIyO16T6YRyv - tFkuSMM
-  time_zone = pytz.timezone(timezone)
   localized_time = datetime.fromtimestamp(float(timestamp), time_zone)
   return localized_time.hour * 3600 + localized_time.minute * 60 + localized_time.second
 
@@ -136,20 +138,18 @@ if __name__ == "__main__":
     # parser.add_argument('--gtfsZipOrDir', help='Gtfs zip file or directory', required=True)
     # parser.add_argument('--feedUrl', help='Gtfs realtime vehicle position url', required=True)
     # parser.add_argument('--sqliteDb', help='A path to sqlite db file', required=True)
-    # parser.add_argument('--timezone', help='A timezone for this feed', required=True)
     # parser.add_argument('--interval', help='A time interval between requests (in secs)', type=int, required=True)
     # parser.add_argument('--logFile', help='A time interval between requests (in secs)', required=False)
     # args = parser.parse_args()
     # if args.logFile is not None:
     #   logging.basicConfig(filename=args.logFile, level=logging.DEBUG)
-    # main(args.gtfsZipOrDir, args.feedUrl, args.sqliteDb, args.timezone, args.interval)
-    # main("C:\\Users\\stefancho\\Desktop\\gtfs-feeds\\gtfs-burlington", "http://opendata.burlington.ca/gtfs-rt/GTFS_VehiclePositions.pb", "C:\\sqlite\\db\\burlington.db", "US/Eastern", 50)
+    # main(args.gtfsZipOrDir, args.feedUrl, args.sqliteDb, args.interval)
+    main("C:\\Users\\stefancho\\Desktop\\gtfs-feeds\\gtfs-burlington", "http://opendata.burlington.ca/gtfs-rt/GTFS_VehiclePositions.pb", "C:\\sqlite\\db\\burlington.db", 50)
 
 
     # logging.basicConfig(filename='vancouver.log', level=logging.DEBUG)
-    main("C:\\Users\\stefancho\\Desktop\\gtfs-feeds\\vancouver.zip",
-         "http://gtfs.translink.ca/gtfsposition?apikey=YondBWFAfXGcwwy2VieH", "C:\\sqlite\\db\\vancouver.db",
-         "Canada/Pacific", 50)
+    # main("C:\\Users\\stefancho\\Desktop\\gtfs-feeds\\vancouver.zip",
+    #      "http://gtfs.translink.ca/gtfsposition?apikey=YondBWFAfXGcwwy2VieH", "C:\\sqlite\\db\\vancouver.db", 50)
 
 
   except KeyboardInterrupt as err:

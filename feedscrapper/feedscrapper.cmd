@@ -1,1 +1,1 @@
-python -m cProfile feedscrapper.py --gtfsZipOrDir "C:\\Users\\stefancho\\Desktop\\gtfs-feeds\\gtfs-burlington" --feedUrl "http://opendata.burlington.ca/gtfs-rt/GTFS_VehiclePositions.pb" --sqliteDb "C:\\sqlite\\db\\burlington_v3.db" --timezone "US/Eastern" --interval 50 --logFile "burlington.log"
+python -m cProfile feedscrapper.py --gtfsZipOrDir "C:\\Users\\stefancho\\Desktop\\gtfs-feeds\\gtfs-burlington" --feedUrl "http://opendata.burlington.ca/gtfs-rt/GTFS_VehiclePositions.pb" --sqliteDb "C:\\sqlite\\db\\burlington_v3.db" --interval 50 --logFile "burlington.log"
