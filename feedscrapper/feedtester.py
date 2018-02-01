@@ -33,4 +33,5 @@ def test_feed(url):
 
 
 if __name__ == "__main__":
-    test_feed('http://opendata.burlington.ca/gtfs-rt/GTFS_VehiclePositions.pb')
+    # test_feed('http://opendata.burlington.ca/gtfs-rt/GTFS_VehiclePositions.pb')
+    test_feed('https://data.texas.gov/download/eiei-9rpf/application%2Foctet-stream')

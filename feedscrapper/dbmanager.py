@@ -42,10 +42,12 @@ class DbManager:
                         stop_progress) VALUES(?,?,?,?,?,?,?) '''
             cur = self.conn.cursor()
             cur.execute(sql, (route_id, trip_id, stop_seq, sampling_time, delay_sec, progress, inter_progress))
-            self.conn.commit()
         except Error as e:
             print e
             raise e
+
+    def commit(self):
+        self.conn.commit()
 
     def has_log_duplicate(self, trip_id, time):
         try:
