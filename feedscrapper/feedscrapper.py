@@ -1,8 +1,9 @@
+from google.protobuf.message import DecodeError
 from google.transit import gtfs_realtime_pb2
 from datetime import datetime
 from dbmanager import DbManager
 from transitfeed.shapelib import Point
-from utils import TripState, StopFarFromPolylineException
+from utils import TripState, StopFarFromPolylineException, AlgorithmErrorException
 from utils import PointOutOfPolylineException
 import requests
 import transitfeed
@@ -13,12 +14,13 @@ import logging
 
 SEC_IN_DAY = 24 * 3600
 HOUR_SECS = 23 * 3600
-
+time_zone = None
 
 def main(gtfs_zip_or_dir, feed_url, db_file, interval):
   loader = transitfeed.Loader(feed_path=gtfs_zip_or_dir, memory_db=False)
   schedule = loader.Load()
-  agency = schedule.GetDefaultAgency()
+  agency = schedule.GetAgencyList()[0]
+  global time_zone
   time_zone = pytz.timezone(agency.agency_timezone)
 
   db_manager = DbManager(db_file)
@@ -36,8 +38,9 @@ def main(gtfs_zip_or_dir, feed_url, db_file, interval):
     feed = read_feed(feed_url)
     for entity in feed.entity:
       if entity.HasField('vehicle'):
+        trip_id = entity.vehicle.trip.trip_id
         try:
-          trip = schedule.GetTrip(entity.vehicle.trip.trip_id)
+          trip = schedule.GetTrip(trip_id)
         except KeyError as e:
           logging.warning("Faulty trip_id for entity: {}".format(entity))
           continue
@@ -46,32 +49,36 @@ def main(gtfs_zip_or_dir, feed_url, db_file, interval):
         try:
           trip_state = TripState(trip, vehiclePoint, entity.vehicle.stop_id)
         except PointOutOfPolylineException as e:
-          logging.warning(e.message)
+          logging.warning("trip_id {} is out of shape {}".format(trip_id, (entity.vehicle.position.latitude, entity.vehicle.position.longitude)))
           continue
         except StopFarFromPolylineException as e:
           logging.warning(e.message)
           continue
+        except AlgorithmErrorException as e:
+          logging.warning(e.message)
+          continue
 
         logging.info("Vehicle position trip_id:{}, timestamp:{}, to_end:{}, stop_id:{}".format(
-            entity.vehicle.trip.trip_id, entity.vehicle.timestamp, trip_state.get_distance_to_end_stop(), entity.vehicle.stop_id
+            trip_id, entity.vehicle.timestamp, trip_state.get_distance_to_end_stop(), entity.vehicle.stop_id
         ))
 
-        cur_trip_progress = active_trips.get_trip_progress(trip.trip_id)
+        cur_trip_progress = active_trips.get_trip_progress(trip_id)
         new_progress = trip_state.get_trip_progress()
-        active_trips.add_update_trip(trip.trip_id, entity.vehicle.timestamp, new_progress)
+        active_trips.add_update_trip(trip_id, entity.vehicle.timestamp, new_progress)
         if trip_state.get_distance_to_end_stop() < 100 and cur_trip_progress == new_progress:
           continue
         if cur_trip_progress is not None and new_progress < cur_trip_progress:
-          logging.warning("The trip_id {} seems to go backwards.".format(trip.trip_id))
+          logging.warning("The trip_id {} seems to go backwards.".format(trip_id))
           continue
 
-        if not db_manager.has_log_duplicate(trip.trip_id, entity.vehicle.timestamp):
+        if not db_manager.has_log_duplicate(trip_id, entity.vehicle.timestamp):
           cnt += 1
           estimated_time = trip_state.get_estimated_scheduled_time()
           stop_progress = trip_state.get_stop_progress()
-          delay = calculate_delay(_normalize_time(entity.vehicle.timestamp, time_zone), estimated_time)
-          db_manager.insert_log(entity.vehicle.trip.route_id, trip.trip_id, trip_state.get_stop_seq(),
-                                entity.vehicle.timestamp, delay, new_progress, stop_progress)
+          delay = calculate_delay(_normalize_time(entity.vehicle.timestamp), estimated_time)
+          start_day = active_trips.get_day_for_trip(trip_id)
+          db_manager.insert_log(entity.vehicle.trip.route_id, trip_id, trip_state.get_stop_seq(),
+                                entity.vehicle.timestamp, start_day, delay, new_progress, stop_progress)
     db_manager.commit()
     proc_time = time.time() - before
     print "Procesing time {}, records {}".format(proc_time, cnt)
@@ -81,9 +88,7 @@ def main(gtfs_zip_or_dir, feed_url, db_file, interval):
     # active_trips.clean_unactive_trips()
     time.sleep(10)
 
-def _normalize_time(timestamp, time_zone):
-  """"Convert timestamp according to timezone, after that transform result to seconds after midnight"""
-  # https: // maps.googleapis.com / maps / api / timezone / json?location = 40.06021, -82.969955 & timestamp = 1516809140 & key = AIzaSyADDgMlAZ5hnWEWIyO16T6YRyv - tFkuSMM
+def _normalize_time(timestamp):
   localized_time = datetime.fromtimestamp(float(timestamp), time_zone)
   return localized_time.hour * 3600 + localized_time.minute * 60 + localized_time.second
 
@@ -101,7 +106,11 @@ def calculate_delay(reporting_time, estimated_time):
 def read_feed(url):
   feed = gtfs_realtime_pb2.FeedMessage()
   response = requests.get(url)
-  feed.ParseFromString(response.content)
+  try:
+    feed.ParseFromString(response.content)
+  except DecodeError as e:
+    logging.error("Error while parsing protobuf input. {}".format(e.message))
+    feed.entity = []
   return feed
 
 class ActiveTrips:
@@ -109,21 +118,27 @@ class ActiveTrips:
     self.active_trips = {}
 
   def is_trip_active(self, trip_id):
-    self.active_trips.has_key(trip_id)
+    return self.active_trips.has_key(trip_id)
 
   def get_trip_progress(self, trip_id):
     if self.is_trip_active(trip_id):
-      progress, timestamp = self.active_trips.get(trip_id)
-      return progress
+      return self.active_trips.get(trip_id)[0]
+    else:
+      return None
+
+  def get_day_for_trip(self, trip_id):
+    if self.is_trip_active(trip_id):
+      return self.active_trips.get(trip_id)[2]
     else:
       return None
 
   def add_update_trip(self, trip_id, timestamp, progress):
-    # if self.is_trip_active():
-    #   day = self.active_trips[trip_id][2]
-    # else:
-
-    self.active_trips[trip_id] = (progress, timestamp)
+    if self.is_trip_active(trip_id):
+      day = self.active_trips[trip_id][2]
+    else:
+      localized_time = datetime.fromtimestamp(float(timestamp), time_zone)
+      day = localized_time.timetuple().tm_yday
+    self.active_trips[trip_id] = (progress, timestamp, day)
 
   def clean_unactive_trips(self):
     now = time.time()
@@ -144,12 +159,13 @@ if __name__ == "__main__":
     # if args.logFile is not None:
     #   logging.basicConfig(filename=args.logFile, level=logging.DEBUG)
     # main(args.gtfsZipOrDir, args.feedUrl, args.sqliteDb, args.interval)
-    main("C:\\Users\\stefancho\\Desktop\\gtfs-feeds\\gtfs-burlington", "http://opendata.burlington.ca/gtfs-rt/GTFS_VehiclePositions.pb", "C:\\sqlite\\db\\burlington.db", 50)
+    # logging.basicConfig(filename='burlington.log', level=logging.DEBUG)
+    # main("C:\\Users\\stefancho\\Desktop\\gtfs-feeds\\gtfs-burlington", "http://opendata.burlington.ca/gtfs-rt/GTFS_VehiclePositions.pb", "C:\\sqlite\\db\\burlington_v1.db", 50)
+    #
 
-
-    # logging.basicConfig(filename='vancouver.log', level=logging.DEBUG)
-    # main("C:\\Users\\stefancho\\Desktop\\gtfs-feeds\\vancouver.zip",
-    #      "http://gtfs.translink.ca/gtfsposition?apikey=YondBWFAfXGcwwy2VieH", "C:\\sqlite\\db\\vancouver.db", 50)
+    logging.basicConfig(filename='vancouver.log', level=logging.DEBUG)
+    main("C:\\Users\\stefancho\\Desktop\\gtfs-feeds\\vancouver.zip",
+         "http://gtfs.translink.ca/gtfsposition?apikey=YondBWFAfXGcwwy2VieH", "C:\\sqlite\\db\\vancouver_v1.db", 50)
 
 
   except KeyboardInterrupt as err:

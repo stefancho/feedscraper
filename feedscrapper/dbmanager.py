@@ -23,6 +23,7 @@ class DbManager:
                                             route_id VARCHAR(20) NOT NULL,
                                             trip_id VARCHAR(20) NOT NULL,
                                             time TIMESTAMP NOT NULL,
+                                            day integer NOT NULL,
                                             stop_seq integer NOT NULL,
                                             stop_progress real NOT NULL,
                                             delay_sec integer NOT NULL,
@@ -36,12 +37,12 @@ class DbManager:
             raise e
 
 
-    def insert_log(self, route_id, trip_id, stop_seq, sampling_time, delay_sec, progress, inter_progress):
+    def insert_log(self, route_id, trip_id, stop_seq, sampling_time, day, delay_sec, progress, inter_progress):
         try:
-            sql = ''' INSERT INTO vehicle_log(route_id, trip_id, stop_seq, time, delay_sec, progress, 
-                        stop_progress) VALUES(?,?,?,?,?,?,?) '''
+            sql = ''' INSERT INTO vehicle_log(route_id, trip_id, stop_seq, time, day, delay_sec, progress, 
+                        stop_progress) VALUES(?,?,?,?,?,?,?,?) '''
             cur = self.conn.cursor()
-            cur.execute(sql, (route_id, trip_id, stop_seq, sampling_time, delay_sec, progress, inter_progress))
+            cur.execute(sql, (route_id, trip_id, stop_seq, sampling_time, day, delay_sec, progress, inter_progress))
         except Error as e:
             print e
             raise e
@@ -56,41 +57,6 @@ class DbManager:
 
             rows = cur.fetchall()
             return len(rows) > 0
-        except Error as e:
-            print e
-            raise e
-
-    def has_log_same_progress(self, trip_id, progress):
-        try:
-            cur = self.conn.cursor()
-            cur.execute("SELECT * FROM vehicle_log WHERE trip_id=? AND progress=?", (trip_id, progress))
-
-            rows = cur.fetchall()
-            return len(rows) > 0
-        except Error as e:
-            print e
-            raise e
-
-    def get_latest_trip_progress(self, trip_id, timestamp):
-        try:
-            cur = self.conn.cursor()
-            cur.execute("SELECT progress FROM vehicle_log "
-                        "WHERE trip_id=? and ? - time < 12*3600 ORDER BY time desc LIMIT 1", (trip_id, timestamp))
-
-            rows = cur.fetchall()
-            if rows:
-                return rows[0][0]
-            else:
-                return None
-        except Error as e:
-            print e
-            raise e
-
-    def delete_logs(self, trip_id, before_time):
-        try:
-            cur = self.conn.cursor()
-            cur.execute("DELETE FROM vehicle_log WHERE trip_id=? and time<?", (trip_id, before_time))
-            self.conn.commit()
         except Error as e:
             print e
             raise e

@@ -22,16 +22,17 @@ class TripState:
         self._stop_distances = []
         self._stop_times = trip.GetTimeStops()
         if not self._find_vehicle(last_known):
-            raise PointOutOfPolylineException("The vehicle {} is out of shape".format(self.vehicle.ToLatLng()))
+            raise PointOutOfPolylineException()
 
         if not self._scan_for_stops():
             raise StopFarFromPolylineException("Couldn't reach all stops for trip_id {}".format(self.trip.trip_id))
 
         self._find_previous_stop_indx()
-        if self.next_stop_id:
-            list = [i for i in range(len(self._stop_times)) if self._stop_times[i][2].stop_id == self.next_stop_id]
-            next_stop_indx = list[0]
-            assert next_stop_indx == self.prev_stop_indx + 1 or next_stop_indx == self.prev_stop_indx
+        if self.next_stop_id and self.prev_stop_indx != -1 and not self._is_last_stop():
+            next_stop_indx = [i for i in range(len(self._stop_times))
+                              if self._stop_times[i][2].stop_id == self.next_stop_id][0]
+            if not(next_stop_indx == self.prev_stop_indx + 1 or next_stop_indx == self.prev_stop_indx):
+                raise AlgorithmErrorException("Vehicle localization error")
         self._calculate_distances()
 
     def get_distance_to_end_stop(self):
@@ -48,7 +49,7 @@ class TripState:
             pt_a, pt_b = self.poly.GetPoint(i), self.poly.GetPoint(i + 1)
             cur_segment_len = self.poly.distance[i]
 
-            improved = False
+            # improved = False
             dist_to_vehicle = pt_a.GetDistanceMeters(self.vehicle)
             error = self.VEHICLE_ERROR if self.segment_idx is None else self.error
             res = reach_to_point(self.vehicle, pt_a, pt_b, dist_to_vehicle, cur_segment_len, error)
@@ -57,10 +58,10 @@ class TripState:
                 pt_on_shape = res[0]
                 self.error = res[1]
                 self.distance = accum_distance + pt_a.GetDistanceMeters(pt_on_shape)
-                improved = True
+                # improved = True
 
-            if self._is_vehicle_found() and not improved:
-                break
+            # if self._is_vehicle_found() and not improved:
+            #     break
             accum_distance += cur_segment_len
         return self.segment_idx is not None
 
@@ -161,10 +162,14 @@ def reach_to_point(pt_x, pt_a, pt_b, a_x_len, a_b_len, allowed_error):
 
 
 class PointOutOfPolylineException(Exception):
-    def __init__(self, message):
-        super(PointOutOfPolylineException, self).__init__(message)
+    def __init__(self):
+        super(PointOutOfPolylineException, self).__init__()
 
 
 class StopFarFromPolylineException(Exception):
     def __init__(self, message):
         super(StopFarFromPolylineException, self).__init__(message)
+
+class AlgorithmErrorException(Exception):
+    def __init__(self, message):
+        super(AlgorithmErrorException, self).__init__(message)
