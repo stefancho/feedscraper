@@ -2,6 +2,7 @@ import unittest
 from transitfeed import Loader
 from transitfeed import Point
 from utils import TripState
+from utils import StopFarFromPolylineException
 
 
 class TripStateTester(unittest.TestCase):
@@ -85,6 +86,14 @@ class TripStateTester(unittest.TestCase):
         self.assertTrue(abs(trip_state.debug_error() - trip_state.error) < DELTA)
         trip_state = TripState(self.trip, Point.FromLatLng(42.14507245405113, 24.79940072944254), '')
         self.assertTrue(abs(trip_state.debug_error() - trip_state.error) < DELTA)
+
+    def test_displaced_stop(self):
+        self.trip = self.schedule.GetTrip('247285')
+        try:
+            trip_state = TripState(self.trip, Point.FromLatLng(42.14446157431765, 24.80178254507307), '')
+        except StopFarFromPolylineException as e:
+            self.fail("Stop finding doesn't work")
+
 
 
 if __name__ == "__main__":

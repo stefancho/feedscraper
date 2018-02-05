@@ -19,8 +19,8 @@ class TripState:
         self.poly.distance = [self.poly.GetPoint(i-1).GetDistanceMeters(self.poly.GetPoint(i))
                               for i in range(1, len(self.poly.GetPoints()))]
 
-        self._stop_distances = []
         self._stop_times = trip.GetTimeStops()
+        self._stop_distances = [None for i in range(len(self._stop_times))]
         if not self._find_vehicle(last_known):
             raise VehicleOutOfPolylineException()
 
@@ -30,8 +30,8 @@ class TripState:
         self._find_previous_stop_indx()
         if self.next_stop_id and self.prev_stop_indx != -1 and not self._is_last_stop():
             next_stop_indx = [i for i in range(len(self._stop_times))
-                              if self._stop_times[i][2].stop_id == self.next_stop_id][0]
-            if not(next_stop_indx == self.prev_stop_indx + 1 or next_stop_indx == self.prev_stop_indx):
+                              if self._stop_times[i][2].stop_id == self.next_stop_id]
+            if next_stop_indx and not(next_stop_indx[0] == self.prev_stop_indx + 1 or next_stop_indx[0] == self.prev_stop_indx):
                 raise AlgorithmErrorException()
         self._calculate_distances()
 
@@ -79,7 +79,7 @@ class TripState:
                 res = reach_to_point(stop, pt_a, pt_b, dist_to_stop, cur_segment_len, STOP_ERROR)
                 if res:
                     pt_on_shape = res[0]
-                    self._stop_distances.append(accum_distance + pt_a.GetDistanceMeters(pt_on_shape))
+                    self._stop_distances[current_stop_index] = accum_distance + pt_a.GetDistanceMeters(pt_on_shape)
                     current_stop_index += 1
                 else:
                     break
