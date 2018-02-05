@@ -22,17 +22,17 @@ class TripState:
         self._stop_distances = []
         self._stop_times = trip.GetTimeStops()
         if not self._find_vehicle(last_known):
-            raise PointOutOfPolylineException()
+            raise VehicleOutOfPolylineException()
 
         if not self._scan_for_stops():
-            raise StopFarFromPolylineException("Couldn't reach all stops for trip_id {}".format(self.trip.trip_id))
+            raise StopFarFromPolylineException()
 
         self._find_previous_stop_indx()
         if self.next_stop_id and self.prev_stop_indx != -1 and not self._is_last_stop():
             next_stop_indx = [i for i in range(len(self._stop_times))
                               if self._stop_times[i][2].stop_id == self.next_stop_id][0]
             if not(next_stop_indx == self.prev_stop_indx + 1 or next_stop_indx == self.prev_stop_indx):
-                raise AlgorithmErrorException("Vehicle localization error")
+                raise AlgorithmErrorException()
         self._calculate_distances()
 
     def get_distance_to_end_stop(self):
@@ -138,9 +138,13 @@ class TripState:
 
     def get_estimated_scheduled_time(self):
         """"Gets a time corresponding to current vehicle position for this trip. If for example our vehicle is between
-            two stops, it should estimate it like stop1.departureTime + duration_betwen_stops * traveled_fraction"""
-        if self.prev_stop_indx == -1 or self._is_last_stop():
+            two stops, it should estimate it like stop1.departureTime + duration_betwen_stops * traveled_fraction.
+            A time is measured in seconds from midnight"""
+        if self.prev_stop_indx == -1:
             return 0
+
+        if self._is_last_stop():
+            return self._stop_times[-1][0]
 
         prev_dep = self._stop_times[self.prev_stop_indx][1]
         duration = self._stop_times[self.prev_stop_indx + 1][0] - prev_dep
@@ -157,19 +161,12 @@ def reach_to_point(pt_x, pt_a, pt_b, a_x_len, a_b_len, allowed_error):
         pt = GetClosestPoint(pt_x, pt_a, pt_b)
         error = pt.GetDistanceMeters(pt_x)
         if error <= allowed_error:
-            return (pt, error)
+            return pt, error
     return tuple()
 
 
-class PointOutOfPolylineException(Exception):
-    def __init__(self):
-        super(PointOutOfPolylineException, self).__init__()
+class VehicleOutOfPolylineException(Exception): pass
 
+class StopFarFromPolylineException(Exception): pass
 
-class StopFarFromPolylineException(Exception):
-    def __init__(self, message):
-        super(StopFarFromPolylineException, self).__init__(message)
-
-class AlgorithmErrorException(Exception):
-    def __init__(self, message):
-        super(AlgorithmErrorException, self).__init__(message)
+class AlgorithmErrorException(Exception): pass

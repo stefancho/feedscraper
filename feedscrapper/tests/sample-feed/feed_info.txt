@@ -1,0 +1,2 @@
+feed_publisher_name,feed_publisher_url,feed_lang,feed_start_date,feed_end_date,feed_version
+Burlington Transit,http://www.burlingtontransit.ca,en,20180107,20180303,2018 BP 7 JAN _20171215

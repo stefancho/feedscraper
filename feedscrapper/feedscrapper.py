@@ -4,7 +4,7 @@ from datetime import datetime
 from dbmanager import DbManager
 from transitfeed.shapelib import Point
 from utils import TripState, StopFarFromPolylineException, AlgorithmErrorException
-from utils import PointOutOfPolylineException
+from utils import VehicleOutOfPolylineException
 import requests
 import transitfeed
 import time
@@ -15,6 +15,7 @@ import logging
 SEC_IN_DAY = 24 * 3600
 HOUR_SECS = 23 * 3600
 time_zone = None
+
 
 def main(gtfs_zip_or_dir, feed_url, db_file, interval):
   loader = transitfeed.Loader(feed_path=gtfs_zip_or_dir, memory_db=False)
@@ -48,19 +49,15 @@ def main(gtfs_zip_or_dir, feed_url, db_file, interval):
         vehiclePoint = Point.FromLatLng(entity.vehicle.position.latitude, entity.vehicle.position.longitude)
         try:
           trip_state = TripState(trip, vehiclePoint, entity.vehicle.stop_id)
-        except PointOutOfPolylineException as e:
-          logging.warning("trip_id {} is out of shape {}".format(trip_id, (entity.vehicle.position.latitude, entity.vehicle.position.longitude)))
+        except VehicleOutOfPolylineException as e:
+          logging.warning("Vehicle {1} is out of shape for trip_id {0}".format(trip_id, (entity.vehicle.position.latitude, entity.vehicle.position.longitude)))
           continue
         except StopFarFromPolylineException as e:
-          logging.warning(e.message)
+          logging.warning("Couldn't reach all stops for trip_id {}".format(trip_id))
           continue
         except AlgorithmErrorException as e:
-          logging.warning(e.message)
+          logging.warning("Vehicle localization error trip_id {}, vehicle {}".format(trip_id, (entity.vehicle.position.latitude, entity.vehicle.position.longitude)))
           continue
-
-        logging.info("Vehicle position trip_id:{}, timestamp:{}, to_end:{}, stop_id:{}".format(
-            trip_id, entity.vehicle.timestamp, trip_state.get_distance_to_end_stop(), entity.vehicle.stop_id
-        ))
 
         cur_trip_progress = active_trips.get_trip_progress(trip_id)
         new_progress = trip_state.get_trip_progress()
@@ -80,13 +77,15 @@ def main(gtfs_zip_or_dir, feed_url, db_file, interval):
           db_manager.insert_log(entity.vehicle.trip.route_id, trip_id, trip_state.get_stop_seq(),
                                 entity.vehicle.timestamp, start_day, delay, new_progress, stop_progress)
     db_manager.commit()
+
+    active_trips.clean_inactive_trips()
     proc_time = time.time() - before
-    print "Procesing time {}, records {}".format(proc_time, cnt)
-    cnt = 0
-    # time.sleep(interval - proc_time)
-    # logging.info("Processed {} requests for {} secs".format(len(feed.entity)), proc_time)
-    # active_trips.clean_unactive_trips()
-    time.sleep(10)
+    logging.info("Procesing time {}, records {}".format(proc_time, cnt))
+    if interval - proc_time > 0:
+      time.sleep(interval - proc_time)
+    else:
+      logging.warning("Processing is taking too long")
+
 
 def _normalize_time(timestamp):
   localized_time = datetime.fromtimestamp(float(timestamp), time_zone)
@@ -140,33 +139,25 @@ class ActiveTrips:
       day = localized_time.timetuple().tm_yday
     self.active_trips[trip_id] = (progress, timestamp, day)
 
-  def clean_unactive_trips(self):
+  def clean_inactive_trips(self):
+    """"Unused trips are removed after half an hour"""
     now = time.time()
     for trip_id in self.active_trips.keys():
-      progress, timestamp = self.active_trips[trip_id]
-      if now - timestamp > 1800:
+      if now - self.active_trips[trip_id][1] > 1800:
         del self.active_trips[trip_id]
+
 
 if __name__ == "__main__":
   try:
-    # parser = argparse.ArgumentParser(description='This is gtfs realtime feed scraper.')
-    # parser.add_argument('--gtfsZipOrDir', help='Gtfs zip file or directory', required=True)
-    # parser.add_argument('--feedUrl', help='Gtfs realtime vehicle position url', required=True)
-    # parser.add_argument('--sqliteDb', help='A path to sqlite db file', required=True)
-    # parser.add_argument('--interval', help='A time interval between requests (in secs)', type=int, required=True)
-    # parser.add_argument('--logFile', help='A time interval between requests (in secs)', required=False)
-    # args = parser.parse_args()
-    # if args.logFile is not None:
-    #   logging.basicConfig(filename=args.logFile, level=logging.DEBUG)
-    # main(args.gtfsZipOrDir, args.feedUrl, args.sqliteDb, args.interval)
-    # logging.basicConfig(filename='burlington.log', level=logging.DEBUG)
-    # main("C:\\Users\\stefancho\\Desktop\\gtfs-feeds\\gtfs-burlington", "http://opendata.burlington.ca/gtfs-rt/GTFS_VehiclePositions.pb", "C:\\sqlite\\db\\burlington_v1.db", 50)
-    #
-
-    logging.basicConfig(filename='vancouver.log', level=logging.DEBUG)
-    main("C:\\Users\\stefancho\\Desktop\\gtfs-feeds\\vancouver.zip",
-         "http://gtfs.translink.ca/gtfsposition?apikey=YondBWFAfXGcwwy2VieH", "C:\\sqlite\\db\\vancouver_v1.db", 50)
-
-
+    parser = argparse.ArgumentParser(description='This is gtfs realtime feed scraper.')
+    parser.add_argument('--gtfsZipOrDir', help='Gtfs zip file or directory', required=True)
+    parser.add_argument('--feedUrl', help='Gtfs realtime vehicle position url', required=True)
+    parser.add_argument('--sqliteDb', help='A path to sqlite db file', required=True)
+    parser.add_argument('--interval', help='A time interval between requests (in secs)', type=int, required=True)
+    parser.add_argument('--logFile', help='A time interval between requests (in secs)', required=False)
+    args = parser.parse_args()
+    if args.logFile is not None:
+      logging.basicConfig(filename=args.logFile, level=logging.DEBUG)
+    main(args.gtfsZipOrDir, args.feedUrl, args.sqliteDb, args.interval)
   except KeyboardInterrupt as err:
     logging.info("Ended at {}".format(datetime.now()))

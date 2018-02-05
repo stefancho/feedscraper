@@ -27,11 +27,13 @@ class FeedTester:
 def test_feed(url):
     tester = FeedTester(url)
     stopFlag = threading.Event()
-    thread = TimerThread(stopFlag, 50, tester.compare_feeds)
+    thread = TimerThread(stopFlag, 3, tester.compare_feeds)
     thread.start()
     # thread.join()
 
 
 if __name__ == "__main__":
-    # test_feed('http://opendata.burlington.ca/gtfs-rt/GTFS_VehiclePositions.pb')
-    test_feed('https://data.texas.gov/download/eiei-9rpf/application%2Foctet-stream')
+    test_feed('http://opendata.burlington.ca/gtfs-rt/GTFS_VehiclePositions.pb')
+    # test_feed('https://data.texas.gov/download/eiei-9rpf/application%2Foctet-stream')
+    # test_feed('http://gtfs.translink.ca/gtfsposition?apikey=YondBWFAfXGcwwy2VieH')
+    # test_feed('http://gtfs.ovapi.nl/nl/vehiclePositions.pb')
