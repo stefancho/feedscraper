@@ -5,7 +5,7 @@ from transitfeed import GetClosestPoint
 
 class TripState:
     STOP_ERROR = 30
-    VEHICLE_ERROR = 50
+    VEHICLE_ERROR = 100
 
     def __init__(self, trip, vehicle_point, next_stop_id, last_known = 0):
         self.trip = trip
@@ -24,7 +24,7 @@ class TripState:
         if not self._find_vehicle(last_known):
             raise VehicleOutOfPolylineException()
 
-        if not self._scan_for_stops():
+        if not self._scan_for_stops(self.STOP_ERROR) and not self._scan_for_stops(self.STOP_ERROR*2):
             raise StopFarFromPolylineException()
 
         self._find_previous_stop_indx()
@@ -65,7 +65,7 @@ class TripState:
             accum_distance += cur_segment_len
         return self.segment_idx is not None
 
-    def _scan_for_stops(self):
+    def _scan_for_stops(self, STOP_ERROR):
         """"This is necessary, because shape_dist_traveled column is not reliable."""
         current_stop_index = 0
         accum_distance = 0
@@ -76,7 +76,7 @@ class TripState:
             while current_stop_index < len(self._stop_times):
                 stop = Point.FromLatLng(self._stop_times[current_stop_index][2].stop_lat, self._stop_times[current_stop_index][2].stop_lon)
                 dist_to_stop = pt_a.GetDistanceMeters(stop)
-                res = reach_to_point(stop, pt_a, pt_b, dist_to_stop, cur_segment_len, self.STOP_ERROR)
+                res = reach_to_point(stop, pt_a, pt_b, dist_to_stop, cur_segment_len, STOP_ERROR)
                 if res:
                     pt_on_shape = res[0]
                     self._stop_distances.append(accum_distance + pt_a.GetDistanceMeters(pt_on_shape))

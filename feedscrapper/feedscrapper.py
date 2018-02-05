@@ -109,7 +109,6 @@ def read_feed(url):
     feed.ParseFromString(response.content)
   except DecodeError as e:
     logging.error("Error while parsing protobuf input. {}".format(e.message))
-    feed.entity = []
   return feed
 
 class ActiveTrips:
