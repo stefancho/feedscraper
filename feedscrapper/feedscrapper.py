@@ -74,7 +74,7 @@ def main(gtfs_zip_or_dir, feed_url, db_file, interval):
           stop_progress = trip_state.get_stop_progress()
           delay = calculate_delay(_normalize_time(entity.vehicle.timestamp), estimated_time)
           start_day = active_trips.get_day_for_trip(trip_id)
-          db_manager.insert_log(entity.vehicle.trip.route_id, trip_id, trip_state.get_stop_seq(),
+          db_manager.insert_log(entity.vehicle.trip.route_id, trip_id, trip_state.get_prev_stop_seq(),
                                 entity.vehicle.timestamp, start_day, delay, new_progress, stop_progress)
     db_manager.commit()
 

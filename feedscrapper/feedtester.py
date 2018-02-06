@@ -6,26 +6,33 @@ from timerthread import TimerThread
 
 class FeedTester:
     def __init__(self, url):
-        self.feed = {}
+        self.last_timestamp = None
+        self.last_change = None
         self.url = url
-        self.last_difference = None
+        self.last_feed = None
 
     def compare_feeds(self):
       now = time.time()
       feed = read_feed(self.url)
+      timestamp = feed.header.timestamp
+      if timestamp != self.last_timestamp:
+        if self.last_timestamp is not None:
+            print "Server regeneration {}s".format(timestamp - self.last_timestamp)
+        self.last_timestamp = timestamp
+
       cur_feed = {}
       for entity in feed.entity:
-          if entity.HasField('vehicle'):
-            if entity.vehicle.trip.trip_id:
-                cur_feed[entity.vehicle.trip.trip_id] = entity.vehicle.timestamp
-            elif entity.vehicle.trip.route_id:
-                cur_feed[entity.vehicle.trip.route_id] = entity.vehicle.timestamp
+        if entity.HasField('vehicle'):
+          if entity.vehicle.trip.trip_id:
+            cur_feed[entity.vehicle.trip.trip_id] = entity.vehicle.timestamp
+          elif entity.vehicle.trip.route_id:
+            cur_feed[entity.vehicle.trip.route_id] = entity.vehicle.timestamp
 
-      if cur_feed != self.feed:
-        self.feed = cur_feed
-        if self.last_difference is not None:
-            print now - self.last_difference
-        self.last_difference = now
+      if cur_feed != self.last_feed:
+          self.last_feed = cur_feed
+          if self.last_change is not None:
+              print "Feed change {}s".format(now - self.last_change)
+          self.last_change = now
 
 
 def test_feed(url):
@@ -44,4 +51,4 @@ if __name__ == "__main__":
     # test_feed('http://developer.go-metro.com/TMGTFSRealTimeWebService/vehicle/VehiclePositions.pb')
     # test_feed('http://realtime.cota.com/TMGTFSRealTimeWebService/Vehicle/VehiclePositions.pb')
     # test_feed('http://gtfs.bigbluebus.com/vehiclepositions.bin')
-    # test_feed('http://transport.orgp.spb.ru/Portal/transport/internalapi/gtfs/realtime/vehicle') #Saint Petersburg
+    test_feed('http://transport.orgp.spb.ru/Portal/transport/internalapi/gtfs/realtime/vehicle') #Saint Petersburg
