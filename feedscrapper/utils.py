@@ -21,19 +21,31 @@ class TripState:
 
         self._stop_times = trip.GetTimeStops()
         self._stop_distances = [None for i in range(len(self._stop_times))]
-        if not self._find_vehicle(last_known):
-            raise VehicleOutOfPolylineException()
 
         if not self._scan_for_stops(self.STOP_ERROR) and not self._scan_for_stops(self.STOP_ERROR*2):
             raise StopFarFromPolylineException()
 
+        self.next_stop_idx = self._get_next_stop_idx()
+        if not self._find_vehicle(last_known):
+            raise VehicleOutOfPolylineException()
+
         self._find_previous_stop_indx()
-        if self.next_stop_id and self.prev_stop_indx != -1 and not self._is_last_stop():
-            next_stop_indx = [i for i in range(len(self._stop_times))
-                              if self._stop_times[i][2].stop_id == self.next_stop_id]
-            if next_stop_indx and not(next_stop_indx[0] == self.prev_stop_indx + 1 or next_stop_indx[0] == self.prev_stop_indx):
-                raise AlgorithmErrorException()
         self._calculate_distances()
+
+    def _get_next_stop_idx(self):
+        if self.next_stop_id:
+            for st_indx, st_time in enumerate(self._stop_times):
+                if st_time[2].stop_id == self.next_stop_id:
+                    return st_indx
+        return None
+
+    def _get_distance_range(self):
+        if self.next_stop_idx is not None:
+            if self.next_stop_idx == 0:
+                return 0, self._stop_distances[0]
+            else:
+                return self._stop_distances[self.next_stop_idx - 1], self._stop_distances[self.next_stop_idx]
+        return -0.1, float("inf")
 
     def get_distance_to_end_stop(self):
         end_stop = Point.FromLatLng(self._stop_times[-1][2].stop_lat, self._stop_times[-1][2].stop_lon)
@@ -43,27 +55,32 @@ class TripState:
         return self.prev_stop_indx == len(self._stop_times) - 1
 
     def _find_vehicle(self, start_pt_indx):
-        self.segment_idx = None
+        min_distance, max_distance = self._get_distance_range()
+        self.distance = None
+        restricted_distance = None
         accum_distance = 0
         for i in range(start_pt_indx, len(self.poly.GetPoints()) - 1):
             pt_a, pt_b = self.poly.GetPoint(i), self.poly.GetPoint(i + 1)
             cur_segment_len = self.poly.distance[i]
 
-            # improved = False
             dist_to_vehicle = pt_a.GetDistanceMeters(self.vehicle)
-            error = self.VEHICLE_ERROR if self.segment_idx is None else self.error
-            res = reach_to_point(self.vehicle, pt_a, pt_b, dist_to_vehicle, cur_segment_len, error)
+            res = reach_to_point(self.vehicle, pt_a, pt_b, dist_to_vehicle, cur_segment_len, self.VEHICLE_ERROR)
             if res:
-                self.segment_idx = i
                 pt_on_shape = res[0]
-                self.error = res[1]
-                self.distance = accum_distance + pt_a.GetDistanceMeters(pt_on_shape)
-                # improved = True
-
-            # if self._is_vehicle_found() and not improved:
-            #     break
+                distance = accum_distance + pt_a.GetDistanceMeters(pt_on_shape)
+                if self.distance is None or self.distance is not None and self.error > res[1]:
+                    self.distance = distance
+                    self.error = res[1]
+                if min_distance < distance <= max_distance and (restricted_distance is None or restricted_distance is not None and restricted_dist_err > res[1]):
+                    restricted_distance = distance
+                    restricted_dist_err = res[1]
             accum_distance += cur_segment_len
-        return self.segment_idx is not None
+
+        if restricted_distance is not None:
+            self.distance = restricted_distance
+            self.error = restricted_dist_err
+
+        return self.distance is not None
 
     def _scan_for_stops(self, STOP_ERROR):
         """"This is necessary, because shape_dist_traveled column is not reliable."""
@@ -94,11 +111,15 @@ class TripState:
         return self.dist_to_prev_stop / self.stop_interval
 
     def debug_error(self):
-        pt, i = self.poly.GetClosestPoint(self.vehicle)
-        return pt.GetDistanceMeters(self.vehicle)
+        pt, segment_indx = self.poly.GetClosestPoint(self.vehicle)
+        distance = 0
+        for i in range(0, segment_indx):
+            distance += self.poly._points[i].GetDistanceMeters(self.poly._points[i + 1])
+        distance += self.poly._points[segment_indx].GetDistanceMeters(pt)
+        return pt.GetDistanceMeters(self.vehicle), distance
 
     def _is_vehicle_found(self):
-        return self.segment_idx is not None
+        return self.distance is not None
 
     def get_trip_len(self):
         if self.calculated_length is None:
@@ -150,7 +171,7 @@ class TripState:
         duration = self._stop_times[self.prev_stop_indx + 1][0] - prev_dep
         return prev_dep + duration * (self.dist_to_prev_stop / self.stop_interval)
 
-    def get_stop_seq(self):
+    def get_prev_stop_seq(self):
         return self.prev_stop_indx + 1
 
 
