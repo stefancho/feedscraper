@@ -22,7 +22,7 @@ class TripState:
         self._stop_times = trip.GetTimeStops()
         self._stop_distances = [None for i in range(len(self._stop_times))]
 
-        if not self._scan_for_stops(self.STOP_ERROR) and not self._scan_for_stops(self.STOP_ERROR*2):
+        if not self._scan_for_stops(self.STOP_ERROR) and not self._scan_for_stops(self.STOP_ERROR*3):
             raise StopFarFromPolylineException()
 
         self.next_stop_idx = self._get_next_stop_idx()
@@ -118,6 +118,14 @@ class TripState:
         distance += self.poly._points[segment_indx].GetDistanceMeters(pt)
         return pt.GetDistanceMeters(self.vehicle), distance
 
+    def debug_stop_distances(self):
+        stop_coords = [Point.FromLatLng(self._stop_times[i][2].stop_lat, self._stop_times[i][2].stop_lon) for i in range(len(self._stop_times))]
+        errors = []
+        for stop in stop_coords:
+            pt, i = self.poly.GetClosestPoint(stop)
+            errors.append(pt.GetDistanceMeters(stop))
+        return errors
+
     def _is_vehicle_found(self):
         return self.distance is not None
 
@@ -178,7 +186,7 @@ class TripState:
 def reach_to_point(pt_x, pt_a, pt_b, a_x_len, a_b_len, allowed_error):
     """"Returns tuple(pt, error) if (pt_a, pt_b) segment approaches pt_x to at least allowed_error distance"""
     MAPPING_ERROR = 10
-    if a_x_len < 50 or a_b_len > a_x_len - MAPPING_ERROR:  # proximity check
+    if a_x_len < 50 or a_b_len > a_x_len - MAPPING_ERROR or abs(a_b_len - a_x_len) < allowed_error:  # proximity check
         pt = GetClosestPoint(pt_x, pt_a, pt_b)
         error = pt.GetDistanceMeters(pt_x)
         if error <= allowed_error:
