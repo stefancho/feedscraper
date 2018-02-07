@@ -61,12 +61,12 @@ def main(gtfs_zip_or_dir, feed_url, db_file, interval):
 
         cur_trip_progress = active_trips.get_trip_progress(trip_id)
         new_progress = trip_state.get_trip_progress()
-        active_trips.add_update_trip(trip_id, entity.vehicle.timestamp, new_progress)
         if trip_state.get_distance_to_end_stop() < 100 and cur_trip_progress == new_progress:
           continue
         if cur_trip_progress is not None and new_progress < cur_trip_progress:
           logging.warning("The trip_id {} seems to go backwards.".format(trip_id))
           continue
+        active_trips.add_update_trip(trip_id, entity.vehicle.timestamp, new_progress)
 
         if not db_manager.has_log_duplicate(trip_id, entity.vehicle.timestamp):
           cnt += 1
