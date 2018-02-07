@@ -51,4 +51,5 @@ if __name__ == "__main__":
     # test_feed('http://developer.go-metro.com/TMGTFSRealTimeWebService/vehicle/VehiclePositions.pb')
     # test_feed('http://realtime.cota.com/TMGTFSRealTimeWebService/Vehicle/VehiclePositions.pb')
     # test_feed('http://gtfs.bigbluebus.com/vehiclepositions.bin')
-    test_feed('http://transport.orgp.spb.ru/Portal/transport/internalapi/gtfs/realtime/vehicle') #Saint Petersburg
+    # test_feed('http://transport.orgp.spb.ru/Portal/transport/internalapi/gtfs/realtime/vehicle') #Saint Petersburg
+    test_feed('https://data.edmonton.ca/download/7qed-k2fc/application%2Foctet-stream')
