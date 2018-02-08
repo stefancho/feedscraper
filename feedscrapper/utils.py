@@ -51,6 +51,14 @@ class TripState:
         end_stop = Point.FromLatLng(self._stop_times[-1][2].stop_lat, self._stop_times[-1][2].stop_lon)
         return self.vehicle.GetDistanceMeters(end_stop)
 
+    def is_progress_reasonable(self, duration_sec, progress):
+        trip_duration = self._stop_times[-1][0] - self._stop_times[0][1]
+        expected_progress = float(duration_sec) / trip_duration
+        if progress > 4*expected_progress:
+            return False
+        else:
+            return True
+
     def _is_last_stop(self):
         return self.prev_stop_indx == len(self._stop_times) - 1
 

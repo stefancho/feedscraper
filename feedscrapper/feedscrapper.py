@@ -50,13 +50,10 @@ def main(gtfs_zip_or_dir, feed_url, db_file, interval):
         try:
           trip_state = TripState(trip, vehiclePoint, entity.vehicle.stop_id)
         except VehicleOutOfPolylineException as e:
-          logging.warning("Vehicle {1} is out of shape for trip_id {0}".format(trip_id, (entity.vehicle.position.latitude, entity.vehicle.position.longitude)))
+          # logging.warning("Vehicle {1} is out of shape for trip_id {0}".format(trip_id, (entity.vehicle.position.latitude, entity.vehicle.position.longitude)))
           continue
         except StopFarFromPolylineException as e:
           logging.warning("Couldn't reach all stops for trip_id {}".format(trip_id))
-          continue
-        except AlgorithmErrorException as e:
-          logging.warning("Vehicle localization error trip_id {}, vehicle {}".format(trip_id, (entity.vehicle.position.latitude, entity.vehicle.position.longitude)))
           continue
 
         cur_trip_progress = active_trips.get_trip_progress(trip_id)
@@ -66,16 +63,26 @@ def main(gtfs_zip_or_dir, feed_url, db_file, interval):
         if cur_trip_progress is not None and new_progress < cur_trip_progress:
           logging.warning("The trip_id {} seems to go backwards.".format(trip_id))
           continue
-        active_trips.add_update_trip(trip_id, entity.vehicle.timestamp, new_progress)
+        if not active_trips.is_trip_active(trip_id) and trip_state.get_prev_stop_seq() > 2:
+          continue
 
-        if not db_manager.has_log_duplicate(trip_id, entity.vehicle.timestamp):
+        prev_timestamp = active_trips.get_timestamp_for_trip(trip_id)
+        if active_trips.is_trip_active(trip_id) and not trip_state.\
+                is_progress_reasonable(entity.vehicle.timestamp - prev_timestamp, new_progress - cur_trip_progress):
+          logging.warning("Trip {} is trying to advance too quick".format(trip_id))
+          continue
+
+        if entity.vehicle.timestamp != prev_timestamp:
           cnt += 1
           estimated_time = trip_state.get_estimated_scheduled_time()
           stop_progress = trip_state.get_stop_progress()
           delay = calculate_delay(_normalize_time(entity.vehicle.timestamp), estimated_time)
+          active_trips.add_update_trip(trip_id, entity.vehicle.timestamp, new_progress)
           start_day = active_trips.get_day_for_trip(trip_id)
           db_manager.insert_log(entity.vehicle.trip.route_id, trip_id, trip_state.get_prev_stop_seq(),
                                 entity.vehicle.timestamp, start_day, delay, new_progress, stop_progress)
+
+
     db_manager.commit()
 
     active_trips.clean_inactive_trips()
@@ -127,6 +134,12 @@ class ActiveTrips:
   def get_day_for_trip(self, trip_id):
     if self.is_trip_active(trip_id):
       return self.active_trips.get(trip_id)[2]
+    else:
+      return None
+
+  def get_timestamp_for_trip(self, trip_id):
+    if self.is_trip_active(trip_id):
+      return self.active_trips.get(trip_id)[1]
     else:
       return None
 
