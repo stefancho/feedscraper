@@ -72,7 +72,7 @@ def main(gtfs_zip_or_dir, feed_url, db_file, interval):
           speed = trip_state.get_avrg_speed(entity.vehicle.timestamp - prev_timestamp, new_progress - cur_trip_progress)
           if speed > 120:#sanity check
             logging.warning("Trip {} is trying to advance too quick -> {}km/h, timestamp {}".format(trip_id, speed, entity.vehicle.timestamp))
-          continue
+            continue
 
         if entity.vehicle.timestamp != prev_timestamp:
           cnt += 1
@@ -172,6 +172,7 @@ class ActiveTrips:
         del self.active_trips[trip_id]
         cnt += 1
     logging.info("{} trips are no longer active".format(cnt))
+
 
 if __name__ == "__main__":
   try:
