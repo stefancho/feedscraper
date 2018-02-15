@@ -5,6 +5,7 @@ from dbmanager import DbManager
 from transitfeed.shapelib import Point
 from utils import TripState, StopFarFromPolylineException, AlgorithmErrorException
 from utils import VehicleOutOfPolylineException
+from sqlite3 import OperationalError
 import requests
 import transitfeed
 import time
@@ -34,7 +35,7 @@ def main(gtfs_zip_or_dir, feed_url, db_file, interval):
 
   logging.info("Start at local time {}".format(datetime.now()))
   while True:
-    cnt = 0
+    cnt, all = 0, 0
     before = time.time()
     feed = read_feed(feed_url)
     for entity in feed.entity:
@@ -45,12 +46,12 @@ def main(gtfs_zip_or_dir, feed_url, db_file, interval):
         except KeyError as e:
           logging.warning("Faulty trip_id for entity: {}".format(entity))
           continue
-
+        all += 1
         vehiclePoint = Point.FromLatLng(entity.vehicle.position.latitude, entity.vehicle.position.longitude)
         try:
           trip_state = TripState(trip, vehiclePoint, entity.vehicle.stop_id)
         except VehicleOutOfPolylineException as e:
-          # logging.warning("Vehicle {1} is out of shape for trip_id {0}".format(trip_id, (entity.vehicle.position.latitude, entity.vehicle.position.longitude)))
+          logging.warning("Vehicle {1} is out of shape for trip_id {0}".format(trip_id, (entity.vehicle.position.latitude, entity.vehicle.position.longitude)))
           continue
         except StopFarFromPolylineException as e:
           logging.warning("Couldn't reach all stops for trip_id {}".format(trip_id))
@@ -61,15 +62,16 @@ def main(gtfs_zip_or_dir, feed_url, db_file, interval):
         if trip_state.get_distance_to_end_stop() < 100 and cur_trip_progress == new_progress:
           continue
         if cur_trip_progress is not None and new_progress < cur_trip_progress:
-          logging.warning("The trip_id {} seems to go backwards.".format(trip_id))
+          logging.warning("The trip_id {} seems to go backwards. Timestamp {}".format(trip_id, entity.vehicle.timestamp))
           continue
         if not active_trips.is_trip_active(trip_id) and trip_state.get_prev_stop_seq() > 2:
           continue
 
         prev_timestamp = active_trips.get_timestamp_for_trip(trip_id)
-        if active_trips.is_trip_active(trip_id) and not trip_state.\
-                is_progress_reasonable(entity.vehicle.timestamp - prev_timestamp, new_progress - cur_trip_progress):
-          logging.warning("Trip {} is trying to advance too quick".format(trip_id))
+        if active_trips.is_trip_active(trip_id):
+          speed = trip_state.get_avrg_speed(entity.vehicle.timestamp - prev_timestamp, new_progress - cur_trip_progress)
+          if speed > 120:#sanity check
+            logging.warning("Trip {} is trying to advance too quick -> {}km/h, timestamp {}".format(trip_id, speed, entity.vehicle.timestamp))
           continue
 
         if entity.vehicle.timestamp != prev_timestamp:
@@ -82,12 +84,15 @@ def main(gtfs_zip_or_dir, feed_url, db_file, interval):
           db_manager.insert_log(entity.vehicle.trip.route_id, trip_id, trip_state.get_prev_stop_seq(),
                                 entity.vehicle.timestamp, start_day, delay, new_progress, stop_progress)
 
+    try:
+      db_manager.commit()
+    except OperationalError as e:
+      logging.warning("Hard drive overload")
+      continue
 
-    db_manager.commit()
-
-    active_trips.clean_inactive_trips()
+    active_trips.clean_inactive_trips(feed.header.timestamp)
     proc_time = time.time() - before
-    logging.info("Procesing time {}, records {}".format(proc_time, cnt))
+    logging.info("Procesing time {}. Saved {} out of {} records".format(proc_time, cnt, all))
     if interval - proc_time > 0:
       time.sleep(interval - proc_time)
     else:
@@ -111,7 +116,15 @@ def calculate_delay(reporting_time, estimated_time):
 
 def read_feed(url):
   feed = gtfs_realtime_pb2.FeedMessage()
-  response = requests.get(url)
+  response = None
+  while response is None:
+    try:
+      response = requests.get(url)
+    except:
+      logging.error("Connection refused by the server..")
+      time.sleep(5)
+      continue
+
   try:
     feed.ParseFromString(response.content)
   except DecodeError as e:
@@ -151,13 +164,14 @@ class ActiveTrips:
       day = localized_time.timetuple().tm_yday
     self.active_trips[trip_id] = (progress, timestamp, day)
 
-  def clean_inactive_trips(self):
-    """"Unused trips are removed after half an hour"""
-    now = time.time()
+  def clean_inactive_trips(self, timestamp):
+    """"Non-active trips are removed after 2 hours"""
+    cnt = 0
     for trip_id in self.active_trips.keys():
-      if now - self.active_trips[trip_id][1] > 1800:
+      if timestamp - self.active_trips[trip_id][1] > 7200:
         del self.active_trips[trip_id]
-
+        cnt += 1
+    logging.info("{} trips are no longer active".format(cnt))
 
 if __name__ == "__main__":
   try:
